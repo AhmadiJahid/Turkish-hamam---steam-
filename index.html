@@ -1,5 +1,6 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -37,7 +38,7 @@
         #fps-counter {
             font-size: 14px;
             font-weight: 600;
-            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
             margin-bottom: 12px;
         }
 
@@ -69,6 +70,7 @@
         }
     </style>
 </head>
+
 <body>
     <!-- WebGL2 Canvas -->
     <canvas id="glCanvas"></canvas>
@@ -110,61 +112,483 @@
 
     <!-- 
         Fragment Shader
-        Placeholder shader that demonstrates uniform usage.
-        Will be expanded later for raymarching.
+        Turkish Hamam interior with analytic ray intersections.
+        Geometry: cylindrical walls, dome hemisphere with oculus, floor, göbektaşı.
+        
+        Proportions (human scale):
+        - Floor at y=0
+        - Walls from y=0 to y=2.4 (ROOM_HEIGHT)
+        - Dome hemisphere starts at y=2.4, curves upward
+        - Eye height ~1.6m
     -->
     <script id="fragment-shader" type="x-shader/x-fragment">#version 300 es
         precision highp float;
 
-        // Uniforms set from JavaScript
-        uniform float u_time;        // Time in seconds
-        uniform vec2 u_resolution;   // Viewport resolution in pixels
-        uniform vec2 u_mouse;        // Mouse position (normalized 0-1)
-        uniform int u_quality;       // Quality level (0, 1, or 2)
+        // ====================================================================
+        // Uniforms
+        // ====================================================================
+        uniform float u_time;           // Time in seconds
+        uniform vec2 u_resolution;      // Viewport resolution in pixels
+        uniform vec3 u_cameraPos;       // Camera position from JS
+        uniform float u_cameraYaw;      // Camera yaw angle (radians)
+        uniform float u_cameraPitch;    // Camera pitch angle (radians)
+        uniform int u_quality;          // Quality level (0, 1, or 2)
 
         out vec4 fragColor;
 
+        // ====================================================================
+        // Constants - Hamam Geometry Parameters (human scale)
+        // ====================================================================
+        
+        // Room dimensions
+        const float ROOM_RADIUS = 5.0;      // Cylindrical wall radius
+        const float ROOM_HEIGHT = 2.4;      // Height where dome starts (door height)
+        const float DOME_RADIUS = 3.5;      // Dome radius - sized so dome sits on walls
+        
+        // Dome center is at wall top - the hemisphere curves upward from there
+        // With radius 3.5, dome top is at y = 2.4 + 3.5 = 5.9
+        const vec3 DOME_CENTER = vec3(0.0, ROOM_HEIGHT, 0.0);
+        
+        // Oculus (skylight opening in dome)
+        // Using squared radius to avoid sqrt in hot path
+        const float OCULUS_RADIUS = 0.8;
+        const float OCULUS_RADIUS_SQ = 0.64;  // 0.8^2
+        
+        // Height threshold for oculus detection (near dome top)
+        // Dome top is at ROOM_HEIGHT + DOME_RADIUS = 5.9
+        // Oculus region starts slightly below
+        const float DOME_TOP = ROOM_HEIGHT + DOME_RADIUS;
+        const float OCULUS_Y_THRESHOLD = DOME_TOP - 0.3;
+        
+        // Göbektaşı (central heated marble platform)
+        const float GOBEK_RADIUS = 1.8;     // Platform radius
+        const float GOBEK_HEIGHT = 0.45;    // Platform height from floor
+        
+        // Material IDs
+        const int MAT_NONE = 0;
+        const int MAT_FLOOR = 1;
+        const int MAT_WALL = 2;
+        const int MAT_DOME = 3;
+        const int MAT_GOBEK_TOP = 4;
+        const int MAT_GOBEK_SIDE = 5;
+        const int MAT_SKY = 6;
+        const int MAT_SEAM = 7;             // Dome/wall seam ring
+
+        // Ray limits
+        const float MAX_DIST = 50.0;
+        const float EPSILON = 0.0001;
+        
+        // Lighting
+        const vec3 LIGHT_POS = vec3(0.0, DOME_TOP - 0.2, 0.0);  // At oculus
+        const vec3 LIGHT_COLOR = vec3(1.0, 0.95, 0.85);         // Warm daylight
+
+        // ====================================================================
+        // Hit Result Structure
+        // ====================================================================
+        struct HitResult {
+            float t;        // Hit distance (MAX_DIST if no hit)
+            vec3 normal;    // Surface normal at hit point
+            int matId;      // Material identifier
+        };
+
+        // ====================================================================
+        // Intersection: Floor Plane (y = 0)
+        // ====================================================================
+        HitResult intersectFloor(vec3 ro, vec3 rd) {
+            HitResult hit;
+            hit.t = MAX_DIST;
+            hit.matId = MAT_NONE;
+            hit.normal = vec3(0.0);
+
+            // Floor is at y = 0
+            // Ray: P = ro + t * rd
+            // Floor: y = 0 → t = -ro.y / rd.y
+            if (rd.y < -EPSILON) {  // Only if ray points downward
+                float t = -ro.y / rd.y;
+                if (t > EPSILON && t < MAX_DIST) {
+                    vec3 p = ro + t * rd;
+                    float distSq = p.x * p.x + p.z * p.z;
+                    
+                    // Within room radius
+                    if (distSq < ROOM_RADIUS * ROOM_RADIUS) {
+                        // Not on göbektaşı (use squared comparison)
+                        if (distSq > GOBEK_RADIUS * GOBEK_RADIUS) {
+                            hit.t = t;
+                            hit.normal = vec3(0.0, 1.0, 0.0);
+                            hit.matId = MAT_FLOOR;
+                        }
+                    }
+                }
+            }
+            return hit;
+        }
+
+        // ====================================================================
+        // Intersection: Wall Cylinder (interior)
+        // Cylinder from y=0 to y=ROOM_HEIGHT
+        // ====================================================================
+        HitResult intersectCylinder(vec3 ro, vec3 rd) {
+            HitResult hit;
+            hit.t = MAX_DIST;
+            hit.matId = MAT_NONE;
+            hit.normal = vec3(0.0);
+
+            // Cylinder equation (XZ plane): x² + z² = R²
+            // Quadratic: a*t² + b*t + c = 0
+            float a = rd.x * rd.x + rd.z * rd.z;
+            float b = 2.0 * (ro.x * rd.x + ro.z * rd.z);
+            float c = ro.x * ro.x + ro.z * ro.z - ROOM_RADIUS * ROOM_RADIUS;
+
+            float discriminant = b * b - 4.0 * a * c;
+            
+            if (discriminant >= 0.0 && a > EPSILON) {
+                float sqrtD = sqrt(discriminant);
+                float invA = 0.5 / a;
+                
+                // Far hit (t2) since we're inside
+                float t = (-b + sqrtD) * invA;
+                
+                if (t > EPSILON && t < MAX_DIST) {
+                    vec3 p = ro + t * rd;
+                    
+                    // Within wall height
+                    if (p.y >= 0.0 && p.y <= ROOM_HEIGHT) {
+                        hit.t = t;
+                        // Inward-facing normal
+                        float invLen = 1.0 / ROOM_RADIUS;
+                        hit.normal = vec3(-p.x * invLen, 0.0, -p.z * invLen);
+                        
+                        // Check for seam ring at dome junction
+                        float seamWidth = 0.08;
+                        if (p.y > ROOM_HEIGHT - seamWidth) {
+                            hit.matId = MAT_SEAM;
+                        } else {
+                            hit.matId = MAT_WALL;
+                        }
+                    }
+                }
+            }
+            return hit;
+        }
+
+        // ====================================================================
+        // Intersection: Dome Hemisphere with Oculus
+        // Dome sits on top of walls, center at (0, ROOM_HEIGHT, 0)
+        // Oculus detection without acos/asin - uses direct position test
+        // ====================================================================
+        HitResult intersectDome(vec3 ro, vec3 rd) {
+            HitResult hit;
+            hit.t = MAX_DIST;
+            hit.matId = MAT_NONE;
+            hit.normal = vec3(0.0);
+
+            // Sphere: |P - C|² = R²
+            vec3 oc = ro - DOME_CENTER;
+            
+            float a = dot(rd, rd);
+            float b = 2.0 * dot(oc, rd);
+            float c = dot(oc, oc) - DOME_RADIUS * DOME_RADIUS;
+
+            float discriminant = b * b - 4.0 * a * c;
+
+            if (discriminant >= 0.0) {
+                float sqrtD = sqrt(discriminant);
+                float invA = 0.5 / a;
+                
+                // Far intersection (interior hit)
+                float t = (-b + sqrtD) * invA;
+                
+                if (t > EPSILON && t < MAX_DIST) {
+                    vec3 p = ro + t * rd;
+                    
+                    // Only upper hemisphere (above ROOM_HEIGHT)
+                    if (p.y > ROOM_HEIGHT) {
+                        // Oculus detection WITHOUT expensive trig:
+                        // The oculus is a circular hole at the dome top.
+                        // If hit point is near the top AND within oculus XZ radius, it's sky.
+                        //
+                        // Method: Check if horizontal distance from axis < oculus radius
+                        // AND hit point is in the "oculus zone" (top portion of dome)
+                        float xzDistSq = p.x * p.x + p.z * p.z;
+                        
+                        // For a point on the dome surface, if xzDistSq < OCULUS_RADIUS_SQ,
+                        // the point is within the oculus cone
+                        // This works because on a sphere, small xz = near the pole
+                        if (xzDistSq < OCULUS_RADIUS_SQ) {
+                            // Sky through oculus
+                            hit.t = t;
+                            hit.normal = vec3(0.0, -1.0, 0.0);
+                            hit.matId = MAT_SKY;
+                        } else {
+                            // Dome surface
+                            hit.t = t;
+                            vec3 toHit = p - DOME_CENTER;
+                            hit.normal = -normalize(toHit);  // Inward facing
+                            hit.matId = MAT_DOME;
+                        }
+                    }
+                }
+            }
+            return hit;
+        }
+
+        // ====================================================================
+        // Intersection: Göbektaşı (raised circular platform)
+        // ====================================================================
+        HitResult intersectGobektasi(vec3 ro, vec3 rd) {
+            HitResult hit;
+            hit.t = MAX_DIST;
+            hit.matId = MAT_NONE;
+            hit.normal = vec3(0.0);
+
+            // Top surface (disk at y = GOBEK_HEIGHT)
+            if (rd.y < -EPSILON) {  // Looking down
+                float tTop = (GOBEK_HEIGHT - ro.y) / rd.y;
+                if (tTop > EPSILON && tTop < MAX_DIST) {
+                    vec3 p = ro + tTop * rd;
+                    float distSq = p.x * p.x + p.z * p.z;
+                    if (distSq < GOBEK_RADIUS * GOBEK_RADIUS) {
+                        hit.t = tTop;
+                        hit.normal = vec3(0.0, 1.0, 0.0);
+                        hit.matId = MAT_GOBEK_TOP;
+                    }
+                }
+            }
+
+            // Side surface (cylinder)
+            float a = rd.x * rd.x + rd.z * rd.z;
+            if (a > EPSILON) {
+                float b = 2.0 * (ro.x * rd.x + ro.z * rd.z);
+                float c = ro.x * ro.x + ro.z * ro.z - GOBEK_RADIUS * GOBEK_RADIUS;
+                float discriminant = b * b - 4.0 * a * c;
+                
+                if (discriminant >= 0.0) {
+                    float sqrtD = sqrt(discriminant);
+                    float invA = 0.5 / a;
+                    float t1 = (-b - sqrtD) * invA;
+                    float t2 = (-b + sqrtD) * invA;
+
+                    // Check near hit first (t1), then far (t2)
+                    for (int i = 0; i < 2; i++) {
+                        float t = (i == 0) ? t1 : t2;
+                        if (t > EPSILON && t < hit.t) {
+                            vec3 p = ro + t * rd;
+                            if (p.y >= 0.0 && p.y <= GOBEK_HEIGHT) {
+                                hit.t = t;
+                                float invR = 1.0 / GOBEK_RADIUS;
+                                hit.normal = vec3(p.x * invR, 0.0, p.z * invR);
+                                hit.matId = MAT_GOBEK_SIDE;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return hit;
+        }
+
+        // ====================================================================
+        // Combined Scene Intersection
+        // ====================================================================
+        HitResult intersectScene(vec3 ro, vec3 rd) {
+            HitResult closest;
+            closest.t = MAX_DIST;
+            closest.matId = MAT_NONE;
+            closest.normal = vec3(0.0);
+
+            HitResult h;
+            
+            h = intersectFloor(ro, rd);
+            if (h.t < closest.t) closest = h;
+            
+            h = intersectCylinder(ro, rd);
+            if (h.t < closest.t) closest = h;
+            
+            h = intersectDome(ro, rd);
+            if (h.t < closest.t) closest = h;
+            
+            h = intersectGobektasi(ro, rd);
+            if (h.t < closest.t) closest = h;
+
+            return closest;
+        }
+
+        // ====================================================================
+        // First-Person Camera Matrix
+        // Builds view matrix from yaw and pitch angles
+        // ====================================================================
+        mat3 getCameraMatrix(float yaw, float pitch) {
+            // Precompute sin/cos (done once per pixel is acceptable)
+            float sy = sin(yaw);
+            float cy = cos(yaw);
+            float sp = sin(pitch);
+            float cp = cos(pitch);
+            
+            // Forward direction
+            vec3 forward = vec3(sy * cp, sp, cy * cp);
+            
+            // Right vector (perpendicular to forward in XZ plane)
+            vec3 right = vec3(cy, 0.0, -sy);
+            
+            // Up vector
+            vec3 up = cross(right, forward);
+            
+            return mat3(right, up, forward);
+        }
+
+        // ====================================================================
+        // Material Base Colors
+        // ====================================================================
+        vec3 getMaterialColor(int matId, vec3 p) {
+            if (matId == MAT_FLOOR) {
+                // Warm marble floor with subtle veining
+                float vein = sin(p.x * 3.0 + p.z * 2.0) * 0.03;
+                vein += sin(p.x * 7.0 - p.z * 5.0) * 0.02;
+                return vec3(0.88, 0.84, 0.78) + vein;
+            }
+            else if (matId == MAT_WALL) {
+                // Warm stone walls - gradient from bottom to top
+                float heightFade = p.y / ROOM_HEIGHT;
+                vec3 baseWall = mix(vec3(0.72, 0.65, 0.58), vec3(0.78, 0.72, 0.65), heightFade);
+                // Add subtle horizontal variation
+                float variation = sin(p.x * 2.0) * sin(p.z * 2.0) * 0.02;
+                return baseWall + variation;
+            }
+            else if (matId == MAT_SEAM) {
+                // Darker decorative band at dome junction
+                return vec3(0.45, 0.40, 0.35);
+            }
+            else if (matId == MAT_DOME) {
+                // Light plaster dome - slightly warm
+                vec3 baseDome = vec3(0.92, 0.89, 0.84);
+                // Subtle radial pattern suggestion
+                float distFromCenter = length(p.xz) / DOME_RADIUS;
+                return baseDome - vec3(0.03) * distFromCenter;
+            }
+            else if (matId == MAT_GOBEK_TOP) {
+                // Polished heated marble - warm white
+                float vein = sin(p.x * 5.0 + p.z * 3.0) * 0.015;
+                return vec3(0.95, 0.91, 0.85) + vein;
+            }
+            else if (matId == MAT_GOBEK_SIDE) {
+                // Platform edge - slightly darker
+                return vec3(0.75, 0.70, 0.62);
+            }
+            else if (matId == MAT_SKY) {
+                // Bright sky through oculus
+                return vec3(0.85, 0.92, 1.0);
+            }
+            return vec3(0.0);
+        }
+
+        // ====================================================================
+        // Lighting Calculation
+        // Point light at oculus with diffuse + specular
+        // ====================================================================
+        vec3 calculateLighting(vec3 p, vec3 normal, int matId, vec3 viewDir) {
+            vec3 baseColor = getMaterialColor(matId, p);
+            
+            // Sky is emissive - no shading
+            if (matId == MAT_SKY) {
+                return baseColor * 2.0;
+            }
+            
+            // Vector to light
+            vec3 toLight = LIGHT_POS - p;
+            float lightDistSq = dot(toLight, toLight);
+            float lightDist = sqrt(lightDistSq);
+            vec3 lightDir = toLight / lightDist;
+            
+            // Distance attenuation (gentle falloff for indoor space)
+            float attenuation = 1.0 / (1.0 + 0.02 * lightDistSq);
+            
+            // Diffuse lighting
+            float NdotL = max(dot(normal, lightDir), 0.0);
+            vec3 diffuse = baseColor * NdotL * LIGHT_COLOR * 0.7;
+            
+            // Specular (Blinn-Phong) - marble has subtle sheen
+            vec3 halfVec = normalize(lightDir + viewDir);
+            float NdotH = max(dot(normal, halfVec), 0.0);
+            float specPower = 32.0;
+            float spec = pow(NdotH, specPower);
+            
+            // Specular intensity varies by material
+            float specIntensity = 0.15;
+            if (matId == MAT_GOBEK_TOP) specIntensity = 0.3;  // Polished marble
+            if (matId == MAT_DOME) specIntensity = 0.05;      // Matte plaster
+            if (matId == MAT_SEAM) specIntensity = 0.08;
+            
+            vec3 specular = LIGHT_COLOR * spec * specIntensity;
+            
+            // Ambient (fills shadows, varies by height)
+            float ambientStrength = 0.25;
+            // Brighter ambient near dome (secondary bounce)
+            ambientStrength += 0.1 * (p.y / (ROOM_HEIGHT + DOME_RADIUS));
+            vec3 ambient = baseColor * ambientStrength;
+            
+            // Bright ring highlight around oculus on dome
+            if (matId == MAT_DOME) {
+                float xzDist = length(p.xz);
+                float ringDist = abs(xzDist - OCULUS_RADIUS * 1.5);
+                float ringGlow = exp(-ringDist * 8.0) * 0.15;
+                ambient += LIGHT_COLOR * ringGlow;
+            }
+            
+            // Simple ambient occlusion approximation
+            float ao = 1.0;
+            if (matId == MAT_FLOOR) {
+                // Floor darker near walls
+                float edgeDist = ROOM_RADIUS - length(p.xz);
+                ao = smoothstep(0.0, 1.5, edgeDist);
+                ao = mix(0.6, 1.0, ao);
+            }
+            if (matId == MAT_WALL) {
+                // Walls darker near floor
+                ao = smoothstep(0.0, 0.5, p.y);
+                ao = mix(0.7, 1.0, ao);
+            }
+            
+            return (ambient + (diffuse + specular) * attenuation) * ao;
+        }
+
+        // ====================================================================
+        // Main
+        // ====================================================================
         void main() {
-            // Normalized pixel coordinates (0 to 1)
-            vec2 uv = gl_FragCoord.xy / u_resolution;
+            // Normalized coordinates with aspect ratio
+            vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / u_resolution.y;
+
+            // Camera from uniforms (first-person)
+            vec3 ro = u_cameraPos;
             
-            // Center-origin coordinates (-0.5 to 0.5)
-            vec2 centeredUV = uv - 0.5;
+            // Build camera matrix from yaw/pitch
+            mat3 camMat = getCameraMatrix(u_cameraYaw, u_cameraPitch);
             
-            // Aspect ratio correction
-            centeredUV.x *= u_resolution.x / u_resolution.y;
+            // Ray direction with FOV
+            float fov = 1.2;  // ~50 degree half-angle
+            vec3 rd = camMat * normalize(vec3(uv, fov));
+
+            // Trace ray
+            HitResult hit = intersectScene(ro, rd);
             
-            // Distance from center
-            float dist = length(centeredUV);
+            vec3 color;
+            if (hit.matId != MAT_NONE) {
+                vec3 p = ro + hit.t * rd;
+                vec3 viewDir = -rd;
+                color = calculateLighting(p, hit.normal, hit.matId, viewDir);
+            } else {
+                // Background (shouldn't happen if inside room)
+                color = vec3(0.02, 0.02, 0.03);
+            }
+
+            // Tone mapping (ACES-ish) and gamma
+            color = color / (color + vec3(0.5)) * 1.2;  // Slight boost
+            color = pow(color, vec3(1.0 / 2.2));
             
-            // Animated gradient based on time and mouse
-            float wave = sin(dist * 10.0 - u_time * 2.0) * 0.5 + 0.5;
-            
-            // Mouse influence - creates interactive highlight
-            vec2 mouseOffset = (u_mouse - 0.5);
-            mouseOffset.x *= u_resolution.x / u_resolution.y;
-            float mouseDist = length(centeredUV - mouseOffset);
-            float mouseGlow = exp(-mouseDist * 5.0);
-            
-            // Quality-based detail (placeholder for future raymarch steps)
-            // Higher quality = more color variation
-            float qualityFactor = float(u_quality) / 2.0;
-            float detail = sin(dist * 20.0 * (1.0 + qualityFactor) - u_time * 3.0) * 0.5 + 0.5;
-            
-            // Combine into final color
-            vec3 baseColor = vec3(0.1, 0.05, 0.15);
-            vec3 accentColor1 = vec3(0.4, 0.2, 0.8);  // Purple
-            vec3 accentColor2 = vec3(0.2, 0.6, 0.9);  // Cyan
-            
-            vec3 color = baseColor;
-            color += accentColor1 * wave * 0.5;
-            color += accentColor2 * detail * qualityFactor * 0.3;
-            color += vec3(1.0, 0.8, 0.6) * mouseGlow * 0.4;
-            
-            // Vignette effect
-            float vignette = 1.0 - dist * 0.8;
+            // Slight vignette for polish
+            float vignette = 1.0 - 0.15 * dot(uv, uv);
             color *= vignette;
-            
+
             fragColor = vec4(color, 1.0);
         }
     </script>
@@ -172,4 +596,5 @@
     <!-- Main JavaScript -->
     <script src="main.js"></script>
 </body>
+
 </html>

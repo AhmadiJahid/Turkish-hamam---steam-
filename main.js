@@ -1,11 +1,12 @@
 /**
- * WebGL2 Fullscreen Quad Demo
+ * WebGL2 Fullscreen Quad Demo - Hamam Interior
  * 
  * Features:
  * - WebGL2 context initialization
  * - Shader compilation from embedded script tags
  * - Fullscreen quad rendering (no vertex buffers needed)
- * - Uniforms: time, resolution, mouse, quality
+ * - First-person camera with mouse drag + WASD movement
+ * - Uniforms: time, resolution, camera position/direction, quality
  * - Responsive resize handling
  * - FPS counter
  * - Quality slider for future raymarch step control
@@ -27,15 +28,51 @@ let shaderProgram = null;
 const uniforms = {
     time: null,
     resolution: null,
-    mouse: null,
+    cameraPos: null,
+    cameraYaw: null,
+    cameraPitch: null,
     quality: null
+};
+
+/** Camera state - first person controls */
+const camera = {
+    // Position - start near wall looking toward center
+    x: 0.0,
+    y: 1.6,       // Eye height (human scale)
+    z: 4.0,
+
+    // Orientation (radians)
+    yaw: Math.PI,    // Looking toward negative Z (center)
+    pitch: 0.0,
+
+    // Movement speed
+    moveSpeed: 2.5,   // Units per second
+    lookSpeed: 0.003, // Radians per pixel
+
+    // Room bounds for collision
+    roomRadius: 4.5,  // Slightly less than ROOM_RADIUS for margin
+    minHeight: 0.5,
+    maxHeight: 2.2
+};
+
+/** Input state */
+const input = {
+    // Mouse drag state
+    isDragging: false,
+    lastMouseX: 0,
+    lastMouseY: 0,
+
+    // Movement keys (WASD + arrows)
+    forward: false,
+    backward: false,
+    left: false,
+    right: false
 };
 
 /** Application state */
 const state = {
     startTime: 0,
-    mouseX: 0.5,        // Normalized mouse X (0-1)
-    mouseY: 0.5,        // Normalized mouse Y (0-1)
+    lastFrameTime: 0,
     quality: 1,         // Quality level (0, 1, 2)
     frameCount: 0,
     lastFpsUpdate: 0,
@@ -142,7 +179,7 @@ function createProgramFromScripts(gl, vertexScriptId, fragmentScriptId) {
  */
 function initWebGL() {
     const canvas = document.getElementById('glCanvas');
-    
+
     // Request WebGL2 context with performance hints for iGPU
     gl = canvas.getContext('webgl2', {
         alpha: false,               // No alpha in backbuffer (slight perf gain)
@@ -163,7 +200,7 @@ function initWebGL() {
 
     // Create shader program from embedded scripts
     shaderProgram = createProgramFromScripts(gl, 'vertex-shader', 'fragment-shader');
-    
+
     if (!shaderProgram) {
         console.error('Failed to create shader program');
         return false;
@@ -172,7 +209,9 @@ function initWebGL() {
     // Cache uniform locations for efficient updates
     uniforms.time = gl.getUniformLocation(shaderProgram, 'u_time');
     uniforms.resolution = gl.getUniformLocation(shaderProgram, 'u_resolution');
-    uniforms.mouse = gl.getUniformLocation(shaderProgram, 'u_mouse');
+    uniforms.cameraPos = gl.getUniformLocation(shaderProgram, 'u_cameraPos');
+    uniforms.cameraYaw = gl.getUniformLocation(shaderProgram, 'u_cameraYaw');
+    uniforms.cameraPitch = gl.getUniformLocation(shaderProgram, 'u_cameraPitch');
     uniforms.quality = gl.getUniformLocation(shaderProgram, 'u_quality');
 
     // Use the shader program
@@ -195,11 +234,11 @@ function initWebGL() {
  */
 function resizeCanvas() {
     const canvas = gl.canvas;
-    
+
     // Cap pixel ratio for iGPU performance (max 1.5x)
     const maxPixelRatio = 1.5;
     const pixelRatio = Math.min(window.devicePixelRatio || 1, maxPixelRatio);
-    
+
     // Calculate required canvas size
     const displayWidth = Math.floor(canvas.clientWidth * pixelRatio);
     const displayHeight = Math.floor(canvas.clientHeight * pixelRatio);
@@ -208,12 +247,80 @@ function resizeCanvas() {
     if (canvas.width !== displayWidth || canvas.height !== displayHeight) {
         canvas.width = displayWidth;
         canvas.height = displayHeight;
-        
+
         // Update WebGL viewport
         gl.viewport(0, 0, displayWidth, displayHeight);
-        
+
         console.log(`Canvas resized to ${displayWidth}x${displayHeight}`);
     }
+}
+
+// ============================================================================
+// Camera Movement & Collision
+// ============================================================================
+
+/**
+ * Updates camera position based on current input state.
+ * Applies simple cylindrical collision to keep camera inside room.
+ * @param {number} deltaTime - Time since last frame in seconds
+ */
+function updateCamera(deltaTime) {
+    // Calculate movement direction relative to camera yaw
+    let moveX = 0;
+    let moveZ = 0;
+
+    // Forward/backward (along view direction, XZ plane only)
+    if (input.forward) {
+        moveX += Math.sin(camera.yaw);
+        moveZ += Math.cos(camera.yaw);
+    }
+    if (input.backward) {
+        moveX -= Math.sin(camera.yaw);
+        moveZ -= Math.cos(camera.yaw);
+    }
+
+    // Strafe left/right (perpendicular to view direction)
+    if (input.left) {
+        moveX += Math.cos(camera.yaw);
+        moveZ -= Math.sin(camera.yaw);
+    }
+    if (input.right) {
+        moveX -= Math.cos(camera.yaw);
+        moveZ += Math.sin(camera.yaw);
+    }
+
+    // Normalize diagonal movement
+    const moveLen = Math.sqrt(moveX * moveX + moveZ * moveZ);
+    if (moveLen > 0.001) {
+        moveX /= moveLen;
+        moveZ /= moveLen;
+    }
+
+    // Apply movement
+    const speed = camera.moveSpeed * deltaTime;
+    let newX = camera.x + moveX * speed;
+    let newZ = camera.z + moveZ * speed;
+
+    // Collision: keep inside cylindrical room
+    const distFromCenter = Math.sqrt(newX * newX + newZ * newZ);
+    if (distFromCenter > camera.roomRadius) {
+        // Push back to room edge
+        const scale = camera.roomRadius / distFromCenter;
+        newX *= scale;
+        newZ *= scale;
+    }
+
+    // Additional collision: avoid göbektaşı (central platform)
+    const gobekRadius = 2.0; // Slightly larger than GOBEK_RADIUS for margin
+    if (distFromCenter < gobekRadius && camera.y < 0.6) {
+        // Push away from center
+        const pushScale = gobekRadius / Math.max(distFromCenter, 0.1);
+        newX *= pushScale;
+        newZ *= pushScale;
+    }
+
+    camera.x = newX;
+    camera.z = newZ;
 }
 
 // ============================================================================
@@ -221,26 +328,126 @@ function resizeCanvas() {
 // ============================================================================
 
 /**
- * Sets up mouse and touch event listeners for interactive uniforms.
+ * Sets up mouse drag and keyboard event listeners for first-person camera.
  */
 function setupInputHandlers() {
     const canvas = document.getElementById('glCanvas');
 
-    // Mouse movement - update normalized coordinates
-    canvas.addEventListener('mousemove', (e) => {
-        state.mouseX = e.clientX / canvas.clientWidth;
-        state.mouseY = 1.0 - (e.clientY / canvas.clientHeight); // Flip Y for GL coords
+    // --- Mouse drag for look ---
+    canvas.addEventListener('mousedown', (e) => {
+        if (e.button === 0) { // Left button
+            input.isDragging = true;
+            input.lastMouseX = e.clientX;
+            input.lastMouseY = e.clientY;
+            canvas.style.cursor = 'grabbing';
+        }
     });
 
-    // Touch support for mobile
-    canvas.addEventListener('touchmove', (e) => {
-        e.preventDefault();
-        const touch = e.touches[0];
-        state.mouseX = touch.clientX / canvas.clientWidth;
-        state.mouseY = 1.0 - (touch.clientY / canvas.clientHeight);
+    document.addEventListener('mouseup', (e) => {
+        if (e.button === 0) {
+            input.isDragging = false;
+            canvas.style.cursor = 'grab';
+        }
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (input.isDragging) {
+            const deltaX = e.clientX - input.lastMouseX;
+            const deltaY = e.clientY - input.lastMouseY;
+
+            // Update camera orientation
+            camera.yaw -= deltaX * camera.lookSpeed;
+            camera.pitch -= deltaY * camera.lookSpeed;
+
+            // Clamp pitch to prevent flipping (-85° to +85°)
+            const maxPitch = 1.48; // ~85 degrees in radians
+            camera.pitch = Math.max(-maxPitch, Math.min(maxPitch, camera.pitch));
+
+            input.lastMouseX = e.clientX;
+            input.lastMouseY = e.clientY;
+        }
+    });
+
+    // Set initial cursor style
+    canvas.style.cursor = 'grab';
+
+    // --- Keyboard for movement (WASD + arrows) ---
+    document.addEventListener('keydown', (e) => {
+        switch (e.code) {
+            case 'KeyW':
+            case 'ArrowUp':
+                input.forward = true;
+                e.preventDefault();
+                break;
+            case 'KeyS':
+            case 'ArrowDown':
+                input.backward = true;
+                e.preventDefault();
+                break;
+            case 'KeyA':
+            case 'ArrowLeft':
+                input.left = true;
+                e.preventDefault();
+                break;
+            case 'KeyD':
+            case 'ArrowRight':
+                input.right = true;
+                e.preventDefault();
+                break;
+        }
+    });
+
+    document.addEventListener('keyup', (e) => {
+        switch (e.code) {
+            case 'KeyW':
+            case 'ArrowUp':
+                input.forward = false;
+                break;
+            case 'KeyS':
+            case 'ArrowDown':
+                input.backward = false;
+                break;
+            case 'KeyA':
+            case 'ArrowLeft':
+                input.left = false;
+                break;
+            case 'KeyD':
+            case 'ArrowRight':
+                input.right = false;
+                break;
+        }
+    });
+
+    // --- Touch support for mobile ---
+    let touchStartX = 0;
+    let touchStartY = 0;
+
+    canvas.addEventListener('touchstart', (e) => {
+        if (e.touches.length === 1) {
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+            e.preventDefault();
+        }
     }, { passive: false });
 
-    // Quality slider
+    canvas.addEventListener('touchmove', (e) => {
+        if (e.touches.length === 1) {
+            const deltaX = e.touches[0].clientX - touchStartX;
+            const deltaY = e.touches[0].clientY - touchStartY;
+
+            camera.yaw -= deltaX * camera.lookSpeed;
+            camera.pitch -= deltaY * camera.lookSpeed;
+
+            const maxPitch = 1.48;
+            camera.pitch = Math.max(-maxPitch, Math.min(maxPitch, camera.pitch));
+
+            touchStartX = e.touches[0].clientX;
+            touchStartY = e.touches[0].clientY;
+            e.preventDefault();
+        }
+    }, { passive: false });
+
+    // --- Quality slider ---
     const qualitySlider = document.getElementById('quality-slider');
     const qualityValue = document.getElementById('quality-value');
 
@@ -249,7 +456,7 @@ function setupInputHandlers() {
         qualityValue.textContent = state.quality;
     });
 
-    // Window resize handler with debouncing
+    // --- Window resize handler with debouncing ---
     let resizeTimeout;
     window.addEventListener('resize', () => {
         clearTimeout(resizeTimeout);
@@ -268,14 +475,14 @@ function setupInputHandlers() {
  */
 function updateFPS(currentTime) {
     state.frameCount++;
-    
+
     // Update FPS display every 500ms
     const elapsed = currentTime - state.lastFpsUpdate;
     if (elapsed >= 500) {
         state.fps = Math.round((state.frameCount * 1000) / elapsed);
         state.frameCount = 0;
         state.lastFpsUpdate = currentTime;
-        
+
         document.getElementById('fps-counter').textContent = `FPS: ${state.fps}`;
     }
 }
@@ -289,11 +496,18 @@ function updateFPS(currentTime) {
  * @param {number} timestamp - High-resolution timestamp from rAF
  */
 function render(timestamp) {
+    // Calculate delta time for smooth movement
+    const deltaTime = Math.min((timestamp - state.lastFrameTime) / 1000, 0.1);
+    state.lastFrameTime = timestamp;
+
     // Calculate elapsed time in seconds
     const timeSeconds = (timestamp - state.startTime) / 1000;
 
     // Update FPS counter
     updateFPS(timestamp);
+
+    // Update camera position based on input
+    updateCamera(deltaTime);
 
     // Ensure canvas matches display size (handles dynamic resizes)
     resizeCanvas();
@@ -301,7 +515,9 @@ function render(timestamp) {
     // Update uniforms
     gl.uniform1f(uniforms.time, timeSeconds);
     gl.uniform2f(uniforms.resolution, gl.canvas.width, gl.canvas.height);
-    gl.uniform2f(uniforms.mouse, state.mouseX, state.mouseY);
+    gl.uniform3f(uniforms.cameraPos, camera.x, camera.y, camera.z);
+    gl.uniform1f(uniforms.cameraYaw, camera.yaw);
+    gl.uniform1f(uniforms.cameraPitch, camera.pitch);
     gl.uniform1i(uniforms.quality, state.quality);
 
     // Clear and draw fullscreen quad
@@ -320,7 +536,8 @@ function render(timestamp) {
  * Application entry point - called when DOM is ready.
  */
 function main() {
-    console.log('Initializing WebGL2 Demo...');
+    console.log('Initializing WebGL2 Hamam Demo...');
+    console.log('Controls: WASD/Arrows to move, mouse drag to look');
 
     // Initialize WebGL2
     if (!initWebGL()) {
@@ -332,6 +549,7 @@ function main() {
 
     // Record start time for animation
     state.startTime = performance.now();
+    state.lastFrameTime = state.startTime;
     state.lastFpsUpdate = state.startTime;
 
     // Start render loop
