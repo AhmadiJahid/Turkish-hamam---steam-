@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGL2 Demo</title>
+    <style>
+        /* Reset and fullscreen canvas setup */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            overflow: hidden;
+            background: #000;
+            font-family: 'Segoe UI', system-ui, sans-serif;
+        }
+
+        canvas {
+            display: block;
+            width: 100vw;
+            height: 100vh;
+        }
+
+        /* Overlay UI for FPS and controls */
+        #ui-overlay {
+            position: fixed;
+            top: 16px;
+            left: 16px;
+            z-index: 100;
+            color: #fff;
+            user-select: none;
+        }
+
+        #fps-counter {
+            font-size: 14px;
+            font-weight: 600;
+            text-shadow: 0 1px 3px rgba(0,0,0,0.8);
+            margin-bottom: 12px;
+        }
+
+        .control-group {
+            background: rgba(0, 0, 0, 0.5);
+            backdrop-filter: blur(8px);
+            border-radius: 8px;
+            padding: 12px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .control-group label {
+            font-size: 13px;
+            font-weight: 500;
+            min-width: 60px;
+        }
+
+        .control-group input[type="range"] {
+            width: 120px;
+            accent-color: #7c3aed;
+        }
+
+        #quality-value {
+            font-size: 13px;
+            min-width: 20px;
+            text-align: right;
+        }
+    </style>
+</head>
+<body>
+    <!-- WebGL2 Canvas -->
+    <canvas id="glCanvas"></canvas>
+
+    <!-- UI Overlay -->
+    <div id="ui-overlay">
+        <div id="fps-counter">FPS: --</div>
+        <div class="control-group">
+            <label for="quality-slider">Quality:</label>
+            <input type="range" id="quality-slider" min="0" max="2" step="1" value="1">
+            <span id="quality-value">1</span>
+        </div>
+    </div>
+
+    <!-- 
+        Vertex Shader
+        Renders a fullscreen quad using clip-space coordinates.
+        Two triangles cover the entire viewport.
+    -->
+    <script id="vertex-shader" type="x-shader/x-vertex">#version 300 es
+        // Fullscreen quad vertex positions (2 triangles)
+        // Uses gl_VertexID to generate positions without vertex buffers
+        void main() {
+            // Generate quad vertices from vertex ID (0-5)
+            // Triangle 1: (-1,-1), (1,-1), (-1,1)
+            // Triangle 2: (-1,1), (1,-1), (1,1)
+            vec2 positions[6] = vec2[6](
+                vec2(-1.0, -1.0),
+                vec2( 1.0, -1.0),
+                vec2(-1.0,  1.0),
+                vec2(-1.0,  1.0),
+                vec2( 1.0, -1.0),
+                vec2( 1.0,  1.0)
+            );
+            
+            gl_Position = vec4(positions[gl_VertexID], 0.0, 1.0);
+        }
+    </script>
+
+    <!-- 
+        Fragment Shader
+        Placeholder shader that demonstrates uniform usage.
+        Will be expanded later for raymarching.
+    -->
+    <script id="fragment-shader" type="x-shader/x-fragment">#version 300 es
+        precision highp float;
+
+        // Uniforms set from JavaScript
+        uniform float u_time;        // Time in seconds
+        uniform vec2 u_resolution;   // Viewport resolution in pixels
+        uniform vec2 u_mouse;        // Mouse position (normalized 0-1)
+        uniform int u_quality;       // Quality level (0, 1, or 2)
+
+        out vec4 fragColor;
+
+        void main() {
+            // Normalized pixel coordinates (0 to 1)
+            vec2 uv = gl_FragCoord.xy / u_resolution;
+            
+            // Center-origin coordinates (-0.5 to 0.5)
+            vec2 centeredUV = uv - 0.5;
+            
+            // Aspect ratio correction
+            centeredUV.x *= u_resolution.x / u_resolution.y;
+            
+            // Distance from center
+            float dist = length(centeredUV);
+            
+            // Animated gradient based on time and mouse
+            float wave = sin(dist * 10.0 - u_time * 2.0) * 0.5 + 0.5;
+            
+            // Mouse influence - creates interactive highlight
+            vec2 mouseOffset = (u_mouse - 0.5);
+            mouseOffset.x *= u_resolution.x / u_resolution.y;
+            float mouseDist = length(centeredUV - mouseOffset);
+            float mouseGlow = exp(-mouseDist * 5.0);
+            
+            // Quality-based detail (placeholder for future raymarch steps)
+            // Higher quality = more color variation
+            float qualityFactor = float(u_quality) / 2.0;
+            float detail = sin(dist * 20.0 * (1.0 + qualityFactor) - u_time * 3.0) * 0.5 + 0.5;
+            
+            // Combine into final color
+            vec3 baseColor = vec3(0.1, 0.05, 0.15);
+            vec3 accentColor1 = vec3(0.4, 0.2, 0.8);  // Purple
+            vec3 accentColor2 = vec3(0.2, 0.6, 0.9);  // Cyan
+            
+            vec3 color = baseColor;
+            color += accentColor1 * wave * 0.5;
+            color += accentColor2 * detail * qualityFactor * 0.3;
+            color += vec3(1.0, 0.8, 0.6) * mouseGlow * 0.4;
+            
+            // Vignette effect
+            float vignette = 1.0 - dist * 0.8;
+            color *= vignette;
+            
+            fragColor = vec4(color, 1.0);
+        }
+    </script>
+
+    <!-- Main JavaScript -->
+    <script src="main.js"></script>
+</body>
+</html>
