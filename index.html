@@ -4,9 +4,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>WebGL2 Demo</title>
+    <title>Turkish Hamam - WebGL Experience</title>
+    <meta name="description"
+        content="Immersive Turkish Hamam bathhouse with volumetric steam, god rays, and condensation effects">
     <style>
-        /* Reset and fullscreen canvas setup */
         * {
             margin: 0;
             padding: 0;
@@ -15,586 +16,1010 @@
 
         body {
             overflow: hidden;
-            background: #000;
+            background: #0a0a0a;
             font-family: 'Segoe UI', system-ui, sans-serif;
         }
 
-        canvas {
+        #glCanvas {
             display: block;
             width: 100vw;
             height: 100vh;
         }
 
-        /* Overlay UI for FPS and controls */
-        #ui-overlay {
+        /* UI Controls Overlay */
+        #controls {
             position: fixed;
-            top: 16px;
-            left: 16px;
-            z-index: 100;
-            color: #fff;
-            user-select: none;
+            top: 20px;
+            right: 20px;
+            background: rgba(20, 15, 10, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(200, 170, 130, 0.3);
+            border-radius: 12px;
+            padding: 20px;
+            color: #e8dcc8;
+            min-width: 240px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
         }
 
-        #fps-counter {
+        #controls h2 {
             font-size: 14px;
             font-weight: 600;
-            text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
-            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            margin-bottom: 16px;
+            color: #c9a868;
+            border-bottom: 1px solid rgba(200, 170, 130, 0.2);
+            padding-bottom: 10px;
         }
 
         .control-group {
-            background: rgba(0, 0, 0, 0.5);
-            backdrop-filter: blur(8px);
-            border-radius: 8px;
-            padding: 12px 16px;
-            display: flex;
-            align-items: center;
-            gap: 12px;
+            margin-bottom: 16px;
         }
 
         .control-group label {
-            font-size: 13px;
-            font-weight: 500;
-            min-width: 60px;
+            display: block;
+            font-size: 12px;
+            margin-bottom: 6px;
+            color: #b8a898;
         }
 
         .control-group input[type="range"] {
-            width: 120px;
-            accent-color: #7c3aed;
+            width: 100%;
+            height: 6px;
+            -webkit-appearance: none;
+            background: rgba(200, 170, 130, 0.2);
+            border-radius: 3px;
+            outline: none;
         }
 
-        #quality-value {
+        .control-group input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 16px;
+            height: 16px;
+            background: #c9a868;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+        }
+
+        .value-display {
+            font-size: 11px;
+            color: #888;
+            margin-top: 4px;
+        }
+
+        #fps {
+            position: fixed;
+            top: 20px;
+            left: 20px;
+            background: rgba(20, 15, 10, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(200, 170, 130, 0.3);
+            border-radius: 8px;
+            padding: 10px 16px;
+            color: #c9a868;
             font-size: 13px;
-            min-width: 20px;
-            text-align: right;
+            font-weight: 500;
+        }
+
+        #loading {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #c9a868;
+            font-size: 18px;
+            text-align: center;
+        }
+
+        #loading .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid rgba(200, 170, 130, 0.2);
+            border-top-color: #c9a868;
+            border-radius: 50%;
+            margin: 0 auto 16px;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .hidden {
+            display: none !important;
         }
     </style>
 </head>
 
 <body>
-    <!-- WebGL2 Canvas -->
+    <div id="loading">
+        <div class="spinner"></div>
+        <div>Loading Turkish Hamam...</div>
+    </div>
+
     <canvas id="glCanvas"></canvas>
 
-    <!-- UI Overlay -->
-    <div id="ui-overlay">
-        <div id="fps-counter">FPS: --</div>
+    <div id="fps">FPS: --</div>
+
+    <div id="controls">
+        <h2>☽ Hamam Controls</h2>
+
         <div class="control-group">
-            <label for="quality-slider">Quality:</label>
-            <input type="range" id="quality-slider" min="0" max="2" step="1" value="1">
-            <span id="quality-value">1</span>
+            <label>Steam Density</label>
+            <input type="range" id="steamDensity" min="0" max="100" value="60">
+            <div class="value-display" id="steamDensityVal">60%</div>
+        </div>
+
+        <div class="control-group">
+            <label>Steam Quality (Steps)</label>
+            <input type="range" id="steamQuality" min="16" max="64" value="32" step="8">
+            <div class="value-display" id="steamQualityVal">32 steps</div>
+        </div>
+
+        <div class="control-group">
+            <label>God Ray Intensity</label>
+            <input type="range" id="godRayIntensity" min="0" max="100" value="70">
+            <div class="value-display" id="godRayIntensityVal">70%</div>
+        </div>
+
+        <div class="control-group">
+            <label>Ambient Warmth</label>
+            <input type="range" id="warmth" min="0" max="100" value="65">
+            <div class="value-display" id="warmthVal">65%</div>
         </div>
     </div>
 
-    <!-- 
-        Vertex Shader
-        Renders a fullscreen quad using clip-space coordinates.
-        Two triangles cover the entire viewport.
-    -->
-    <script id="vertex-shader" type="x-shader/x-vertex">#version 300 es
-        // Fullscreen quad vertex positions (2 triangles)
-        // Uses gl_VertexID to generate positions without vertex buffers
+    <!-- Vertex Shader: Full-screen quad -->
+    <script id="vs-quad" type="x-shader/x-vertex">#version 300 es
+        in vec2 aPosition;
+        out vec2 vUv;
+        
         void main() {
-            // Generate quad vertices from vertex ID (0-5)
-            // Triangle 1: (-1,-1), (1,-1), (-1,1)
-            // Triangle 2: (-1,1), (1,-1), (1,1)
-            vec2 positions[6] = vec2[6](
-                vec2(-1.0, -1.0),
-                vec2( 1.0, -1.0),
-                vec2(-1.0,  1.0),
-                vec2(-1.0,  1.0),
-                vec2( 1.0, -1.0),
-                vec2( 1.0,  1.0)
-            );
-            
-            gl_Position = vec4(positions[gl_VertexID], 0.0, 1.0);
+            vUv = aPosition * 0.5 + 0.5;
+            gl_Position = vec4(aPosition, 0.0, 1.0);
         }
     </script>
 
-    <!-- 
-        Fragment Shader
-        Turkish Hamam interior with analytic ray intersections.
-        Geometry: cylindrical walls, dome hemisphere with oculus, floor, göbektaşı.
-        
-        Proportions (human scale):
-        - Floor at y=0
-        - Walls from y=0 to y=2.4 (ROOM_HEIGHT)
-        - Dome hemisphere starts at y=2.4, curves upward
-        - Eye height ~1.6m
-    -->
-    <script id="fragment-shader" type="x-shader/x-fragment">#version 300 es
+    <!-- Fragment Shader: Main Hamam Rendering -->
+    <script id="fs-hamam" type="x-shader/x-fragment">#version 300 es
         precision highp float;
-
-        // ====================================================================
-        // Uniforms
-        // ====================================================================
-        uniform float u_time;           // Time in seconds
-        uniform vec2 u_resolution;      // Viewport resolution in pixels
-        uniform vec3 u_cameraPos;       // Camera position from JS
-        uniform float u_cameraYaw;      // Camera yaw angle (radians)
-        uniform float u_cameraPitch;    // Camera pitch angle (radians)
-        uniform int u_quality;          // Quality level (0, 1, or 2)
-
+        
+        in vec2 vUv;
         out vec4 fragColor;
+        
+        uniform float uTime;
+        uniform vec2 uResolution;
+        uniform vec3 uCameraPos;
+        uniform vec3 uCameraTarget;
+        uniform float uSteamDensity;
+        uniform float uSteamQuality;
+        uniform float uGodRayIntensity;
+        uniform float uCondensation;
+        uniform float uWarmth;
+        
+        #define PI 3.14159265359
+        #define MAX_STEPS 80
+        #define MAX_DIST 40.0
+        #define SURF_DIST 0.002
+        
+        // ============================================
+        // NOISE FUNCTIONS
+        // ============================================
+        
+        float hash(float n) { return fract(sin(n) * 43758.5453123); }
+        vec2 hash2(vec2 p) { 
+            return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453); 
+        }
+        float hash3(vec3 p) { return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+        
+        float noise3D(vec3 p) {
+            vec3 i = floor(p);
+            vec3 f = fract(p);
+            f = f * f * (3.0 - 2.0 * f);
+            
+            float n = i.x + i.y * 157.0 + 113.0 * i.z;
+            return mix(
+                mix(mix(hash(n + 0.0), hash(n + 1.0), f.x),
+                    mix(hash(n + 157.0), hash(n + 158.0), f.x), f.y),
+                mix(mix(hash(n + 113.0), hash(n + 114.0), f.x),
+                    mix(hash(n + 270.0), hash(n + 271.0), f.x), f.y), f.z);
+        }
+        
+        float fbm(vec3 p, int octaves) {
+            float value = 0.0;
+            float amplitude = 0.5;
+            float frequency = 1.0;
+            for (int i = 0; i < 4; i++) {
+                if (i >= octaves) break;
+                value += amplitude * noise3D(p * frequency);
+                amplitude *= 0.5;
+                frequency *= 2.0;
+            }
+            return value;
+        }
+        
+        // ============================================
+        // SDF PRIMITIVES
+        // ============================================
+        
+        float sdSphere(vec3 p, float r) {
+            return length(p) - r;
+        }
+        
+        float sdCylinder(vec3 p, float r, float h) {
+            vec2 d = abs(vec2(length(p.xz), p.y)) - vec2(r, h);
+            return min(max(d.x, d.y), 0.0) + length(max(d, 0.0));
+        }
+        
+        float sdBox(vec3 p, vec3 b) {
+            vec3 q = abs(p) - b;
+            return length(max(q, 0.0)) + min(max(q.x, max(q.y, q.z)), 0.0);
+        }
+        
+        float sdOctagon(vec2 p, float r) {
+            const vec2 k = vec2(-0.9238795325, 0.3826834323); // pi/8
+            p = abs(p);
+            p -= 2.0 * min(dot(vec2(k.x, k.y), p), 0.0) * vec2(k.x, k.y);
+            p -= 2.0 * min(dot(vec2(-k.x, k.y), p), 0.0) * vec2(-k.x, k.y);
+            p -= vec2(clamp(p.x, -r, r), r);
+            return length(p) * sign(p.y);
+        }
+        
+        float smin(float a, float b, float k) {
+            float h = clamp(0.5 + 0.5 * (b - a) / k, 0.0, 1.0);
+            return mix(b, a, h) - k * h * (1.0 - h);
+        }
+        
+        // ============================================
+        // HAMAM ARCHITECTURE SDF
+        // ============================================
+        
+        // Dome with oculi
+        float sdDome(vec3 p) {
+            float domeRadius = 5.0;
+            float domeThickness = 0.3;
+            
+            // Main dome shell (inside)
+            float outer = sdSphere(p - vec3(0.0, 0.0, 0.0), domeRadius);
+            float inner = sdSphere(p - vec3(0.0, 0.0, 0.0), domeRadius - domeThickness);
+            float dome = max(outer, -inner);
+            
+            // Cut bottom half
+            dome = max(dome, -p.y);
+            
+            // Oculi (star-shaped openings)
+            float oculi = MAX_DIST;
+            for (int i = 0; i < 8; i++) {
+                float angle = float(i) * PI * 2.0 / 8.0;
+                vec3 oculiPos = vec3(sin(angle) * 2.5, 3.8, cos(angle) * 2.5);
+                float oculiHole = sdCylinder(p - oculiPos, 0.35, 0.5);
+                
+                // Rotate cylinder to point outward from dome center
+                vec3 toCenter = normalize(vec3(0.0, 2.0, 0.0) - oculiPos);
+                oculi = min(oculi, oculiHole);
+            }
+            
+            // Central oculus (larger)
+            float centralOculi = sdCylinder(p - vec3(0.0, 4.8, 0.0), 0.6, 0.5);
+            oculi = min(oculi, centralOculi);
+            
+            dome = max(dome, -oculi);
+            
+            return dome;
+        }
+        
+        // Göbektaşı (central heated platform)
+        float sdGobektasi(vec3 p) {
+            // Octagonal platform
+            float platformHeight = 0.5;
+            float platformRadius = 1.5;
+            
+            vec3 pp = p - vec3(0.0, platformHeight * 0.5, 0.0);
+            float oct = sdOctagon(pp.xz, platformRadius);
+            float platform = max(oct, abs(pp.y) - platformHeight * 0.5);
+            
+            // Decorative edge
+            float edgeRing = abs(length(p.xz) - platformRadius) - 0.08;
+            edgeRing = max(edgeRing, abs(p.y - platformHeight) - 0.05);
+            
+            return min(platform, edgeRing);
+        }
+        
+        // Walls with niches
+        float sdWalls(vec3 p) {
+            float wallRadius = 5.5;
+            float wallHeight = 2.5;
+            float wallThickness = 0.4;
+            
+            // Main cylindrical wall
+            float outerWall = sdCylinder(p - vec3(0.0, wallHeight * 0.5, 0.0), wallRadius, wallHeight * 0.5);
+            float innerWall = sdCylinder(p - vec3(0.0, wallHeight * 0.5, 0.0), wallRadius - wallThickness, wallHeight * 0.5);
+            float wall = max(outerWall, -innerWall);
+            
+            // Niches (alcoves)
+            for (int i = 0; i < 6; i++) {
+                float angle = float(i) * PI * 2.0 / 6.0 + PI / 6.0;
+                float s = sin(angle), c = cos(angle);
 
-        // ====================================================================
-        // Constants - Hamam Geometry Parameters (human scale)
-        // ====================================================================
-        
-        // Room dimensions
-        const float ROOM_RADIUS = 5.0;      // Cylindrical wall radius
-        const float ROOM_HEIGHT = 2.4;      // Height where dome starts (door height)
-        const float DOME_RADIUS = 3.5;      // Dome radius - sized so dome sits on walls
-        
-        // Dome center is at wall top - the hemisphere curves upward from there
-        // With radius 3.5, dome top is at y = 2.4 + 3.5 = 5.9
-        const vec3 DOME_CENTER = vec3(0.0, ROOM_HEIGHT, 0.0);
-        
-        // Oculus (skylight opening in dome)
-        // Using squared radius to avoid sqrt in hot path
-        const float OCULUS_RADIUS = 0.8;
-        const float OCULUS_RADIUS_SQ = 0.64;  // 0.8^2
-        
-        // Height threshold for oculus detection (near dome top)
-        // Dome top is at ROOM_HEIGHT + DOME_RADIUS = 5.9
-        // Oculus region starts slightly below
-        const float DOME_TOP = ROOM_HEIGHT + DOME_RADIUS;
-        const float OCULUS_Y_THRESHOLD = DOME_TOP - 0.3;
-        
-        // Göbektaşı (central heated marble platform)
-        const float GOBEK_RADIUS = 1.8;     // Platform radius
-        const float GOBEK_HEIGHT = 0.45;    // Platform height from floor
-        
-        // Material IDs
-        const int MAT_NONE = 0;
-        const int MAT_FLOOR = 1;
-        const int MAT_WALL = 2;
-        const int MAT_DOME = 3;
-        const int MAT_GOBEK_TOP = 4;
-        const int MAT_GOBEK_SIDE = 5;
-        const int MAT_SKY = 6;
-        const int MAT_SEAM = 7;             // Dome/wall seam ring
+                // local wall coordinates:
+                // nx: radial (0 at inner wall surface, + outward into wall)
+                // nz: around-the-wall
+                vec3 np;
+                np.x = p.x * c + p.z * s;
+                np.z = -p.x * s + p.z * c;
+                np.y = p.y;
 
-        // Ray limits
-        const float MAX_DIST = 50.0;
-        const float EPSILON = 0.0001;
+                float innerR = wallRadius - wallThickness;
+                np.x -= innerR;     // inner surface at np.x = 0
+                np.y -= 1.2;        // niche center height
+
+                // Sphere niche centered inside thickness
+                vec3 center = vec3(wallThickness * 0.55, 0.0, 0.0);
+                float niche = sdSphere(np - center, 0.8);
+
+                // Limit niche to the wall thickness [0, wallThickness]
+                niche = max(niche, -np.x);
+                niche = max(niche,  np.x - wallThickness);
+
+                wall = max(wall, -niche);
+            }
+
+            
+            return wall;
+        }
         
-        // Lighting
-        const vec3 LIGHT_POS = vec3(0.0, DOME_TOP - 0.2, 0.0);  // At oculus
-        const vec3 LIGHT_COLOR = vec3(1.0, 0.95, 0.85);         // Warm daylight
-
-        // ====================================================================
-        // Hit Result Structure
-        // ====================================================================
-        struct HitResult {
-            float t;        // Hit distance (MAX_DIST if no hit)
-            vec3 normal;    // Surface normal at hit point
-            int matId;      // Material identifier
-        };
-
-        // ====================================================================
-        // Intersection: Floor Plane (y = 0)
-        // ====================================================================
-        HitResult intersectFloor(vec3 ro, vec3 rd) {
-            HitResult hit;
-            hit.t = MAX_DIST;
-            hit.matId = MAT_NONE;
-            hit.normal = vec3(0.0);
-
-            // Floor is at y = 0
-            // Ray: P = ro + t * rd
-            // Floor: y = 0 → t = -ro.y / rd.y
-            if (rd.y < -EPSILON) {  // Only if ray points downward
-                float t = -ro.y / rd.y;
-                if (t > EPSILON && t < MAX_DIST) {
-                    vec3 p = ro + t * rd;
-                    float distSq = p.x * p.x + p.z * p.z;
+        // Floor
+        float sdFloor(vec3 p) {
+            return p.y + 0.02; // Slight offset to prevent z-fighting
+        }
+        
+        // Complete scene
+        vec2 scene(vec3 p) {
+            // Returns (distance, materialID)
+            float dome = sdDome(p);
+            float gobek = sdGobektasi(p);
+            float walls = sdWalls(p);
+            float floor = sdFloor(p);
+            
+            vec2 result = vec2(dome, 1.0); // Dome = material 1
+            
+            if (gobek < result.x) result = vec2(gobek, 2.0); // Göbektaşı = material 2
+            if (walls < result.x) result = vec2(walls, 1.0); // Walls = material 1
+            if (floor < result.x) result = vec2(floor, 3.0); // Floor = material 3
+            
+            return result;
+        }
+        
+        // ============================================
+        // MARBLE TEXTURE
+        // ============================================
+        
+        vec3 marbleColor(vec3 p, float matID) {
+            // Carrara-style white marble with dark grey veins
+            vec3 baseColor = vec3(0.97, 0.97, 0.97);  // Pure white base
+            vec3 veinColor = vec3(0.15, 0.15, 0.18);  // Dark grey/black veins
+            vec3 subtleGrey = vec3(0.85, 0.85, 0.87); // Subtle grey patches
+            
+            // Domain warping for organic, branching veins
+            vec3 warpedP = p;
+            warpedP += 0.4 * vec3(
+                fbm(p * 1.5 + vec3(0.0), 3),
+                fbm(p * 1.5 + vec3(5.2), 3),
+                fbm(p * 1.5 + vec3(9.1), 3)
+            );
+            
+            // Primary veins - thick dark cracks
+            float vein1 = sin(warpedP.x * 2.5 + warpedP.z * 1.8 + fbm(warpedP * 3.0, 3) * 4.0);
+            float primaryVein = 1.0 - smoothstep(0.0, 0.08, abs(vein1));
+            
+            // Secondary veins - thinner branching
+            vec3 warpedP2 = p + 0.2 * vec3(fbm(p * 3.0, 2), 0.0, fbm(p * 3.0 + vec3(20.0), 2));
+            float vein2 = sin(warpedP2.z * 4.0 + warpedP2.x * 2.5 + fbm(warpedP2 * 5.0, 2) * 3.0);
+            float secondaryVein = 1.0 - smoothstep(0.0, 0.04, abs(vein2));
+            
+            // Tertiary fine veins - delicate hairline cracks
+            float vein3 = sin(p.x * 8.0 + p.z * 6.0 + fbm(p * 8.0, 2) * 2.0);
+            float tertiaryVein = 1.0 - smoothstep(0.0, 0.02, abs(vein3));
+            
+            // Combine veins with different intensities
+            float totalVein = primaryVein * 0.9 + secondaryVein * 0.5 + tertiaryVein * 0.25;
+            totalVein = clamp(totalVein, 0.0, 1.0);
+            
+            // Subtle grey clouding in background
+            float greyPatch = fbm(p * 2.0 + vec3(30.0), 2);
+            greyPatch = smoothstep(0.4, 0.7, greyPatch) * 0.15;
+            
+            // Build final marble color
+            vec3 marble = mix(baseColor, subtleGrey, greyPatch);
+            marble = mix(marble, veinColor, totalVein);
+            
+            // Göbektaşı has slight warm tint (heated stone)
+            if (matID > 1.5 && matID < 2.5) {
+                marble = mix(marble, vec3(1.0, 0.98, 0.96), 0.1);
+            }
+            
+            return marble;
+        }
+        
+        // ============================================
+        // RAYMARCHING
+        // ============================================
+        
+        vec2 rayMarch(vec3 ro, vec3 rd) {
+            float t = 0.0;
+            float matID = 0.0;
+            
+            for (int i = 0; i < MAX_STEPS; i++) {
+                vec3 p = ro + rd * t;
+                vec2 d = scene(p);
+                
+                if (d.x < SURF_DIST) {
+                    matID = d.y;
+                    break;
+                }
+                
+                t += d.x * 0.8; // Slightly conservative stepping
+                
+                if (t > MAX_DIST) break;
+            }
+            
+            return vec2(t, matID);
+        }
+        
+        vec3 getNormal(vec3 p) {
+            vec2 e = vec2(0.001, 0.0);
+            return normalize(vec3(
+                scene(p + e.xyy).x - scene(p - e.xyy).x,
+                scene(p + e.yxy).x - scene(p - e.yxy).x,
+                scene(p + e.yyx).x - scene(p - e.yyx).x
+            ));
+        }
+        
+        // ============================================
+        // STEAM VOLUMETRIC RENDERING
+        // ============================================
+        
+        float steamDensity(vec3 p) {
+            // Steam is strongest above göbektaşı and rises
+            float heightFade = smoothstep(0.0, 0.5, p.y) * smoothstep(4.5, 2.0, p.y);
+            
+            // Radial falloff from center
+            float radialDist = length(p.xz);
+            float radialFade = smoothstep(4.0, 0.5, radialDist);
+            
+            // Early exit for areas with no steam
+            if (heightFade * radialFade < 0.01) return 0.0;
+            
+            // Animated noise - simpler for performance
+            vec3 steamP = p;
+            steamP.y -= uTime * 0.3; // Rising motion
+            steamP.xz += vec2(sin(uTime * 0.5), cos(uTime * 0.4)) * 0.2; // Gentle swirl
+            
+            float density = fbm(steamP * 1.2, 3);
+            density = smoothstep(0.35, 0.65, density);
+            
+            return density * heightFade * radialFade * uSteamDensity;
+        }
+        
+        vec4 raymarchSteam(vec3 ro, vec3 rd, float maxT) {
+            vec4 accumulated = vec4(0.0);
+            
+            int steps = int(uSteamQuality);
+            float maxDist = min(maxT, 12.0);
+            float stepSize = maxDist / float(steps);
+            
+            vec3 lightDir = normalize(vec3(0.3, 1.0, 0.2));
+            vec3 steamColor = vec3(0.95, 0.93, 0.90);
+            
+            for (int i = 0; i < 64; i++) {
+                if (i >= steps) break;
+                if (accumulated.a > 0.9) break;
+                
+                float t = float(i) * stepSize;
+                vec3 p = ro + rd * t;
+                
+                // Skip if outside steam volume
+                if (p.y < 0.0 || p.y > 5.0 || length(p.xz) > 5.0) continue;
+                
+                float density = steamDensity(p);
+                
+                if (density > 0.01) {
+                    // Simplified lighting
+                    float shadow = 0.7;
                     
-                    // Within room radius
-                    if (distSq < ROOM_RADIUS * ROOM_RADIUS) {
-                        // Not on göbektaşı (use squared comparison)
-                        if (distSq > GOBEK_RADIUS * GOBEK_RADIUS) {
-                            hit.t = t;
-                            hit.normal = vec3(0.0, 1.0, 0.0);
-                            hit.matId = MAT_FLOOR;
-                        }
+                    // Oculi god rays contribution
+                    float godRay = 0.0;
+                    vec3 toOculus = vec3(0.0, 5.0, 0.0) - p;
+                    float oculusDist = length(toOculus);
+                    if (oculusDist < 6.0) {
+                        float rayStrength = max(0.0, dot(normalize(toOculus), vec3(0.0, 1.0, 0.0)));
+                        rayStrength *= smoothstep(6.0, 1.0, oculusDist);
+                        godRay = rayStrength * uGodRayIntensity;
                     }
-                }
-            }
-            return hit;
-        }
-
-        // ====================================================================
-        // Intersection: Wall Cylinder (interior)
-        // Cylinder from y=0 to y=ROOM_HEIGHT
-        // ====================================================================
-        HitResult intersectCylinder(vec3 ro, vec3 rd) {
-            HitResult hit;
-            hit.t = MAX_DIST;
-            hit.matId = MAT_NONE;
-            hit.normal = vec3(0.0);
-
-            // Cylinder equation (XZ plane): x² + z² = R²
-            // Quadratic: a*t² + b*t + c = 0
-            float a = rd.x * rd.x + rd.z * rd.z;
-            float b = 2.0 * (ro.x * rd.x + ro.z * rd.z);
-            float c = ro.x * ro.x + ro.z * ro.z - ROOM_RADIUS * ROOM_RADIUS;
-
-            float discriminant = b * b - 4.0 * a * c;
-            
-            if (discriminant >= 0.0 && a > EPSILON) {
-                float sqrtD = sqrt(discriminant);
-                float invA = 0.5 / a;
-                
-                // Far hit (t2) since we're inside
-                float t = (-b + sqrtD) * invA;
-                
-                if (t > EPSILON && t < MAX_DIST) {
-                    vec3 p = ro + t * rd;
                     
-                    // Within wall height
-                    if (p.y >= 0.0 && p.y <= ROOM_HEIGHT) {
-                        hit.t = t;
-                        // Inward-facing normal
-                        float invLen = 1.0 / ROOM_RADIUS;
-                        hit.normal = vec3(-p.x * invLen, 0.0, -p.z * invLen);
-                        
-                        // Check for seam ring at dome junction
-                        float seamWidth = 0.08;
-                        if (p.y > ROOM_HEIGHT - seamWidth) {
-                            hit.matId = MAT_SEAM;
-                        } else {
-                            hit.matId = MAT_WALL;
-                        }
-                    }
-                }
-            }
-            return hit;
-        }
-
-        // ====================================================================
-        // Intersection: Dome Hemisphere with Oculus
-        // Dome sits on top of walls, center at (0, ROOM_HEIGHT, 0)
-        // Oculus detection without acos/asin - uses direct position test
-        // ====================================================================
-        HitResult intersectDome(vec3 ro, vec3 rd) {
-            HitResult hit;
-            hit.t = MAX_DIST;
-            hit.matId = MAT_NONE;
-            hit.normal = vec3(0.0);
-
-            // Sphere: |P - C|² = R²
-            vec3 oc = ro - DOME_CENTER;
-            
-            float a = dot(rd, rd);
-            float b = 2.0 * dot(oc, rd);
-            float c = dot(oc, oc) - DOME_RADIUS * DOME_RADIUS;
-
-            float discriminant = b * b - 4.0 * a * c;
-
-            if (discriminant >= 0.0) {
-                float sqrtD = sqrt(discriminant);
-                float invA = 0.5 / a;
-                
-                // Far intersection (interior hit)
-                float t = (-b + sqrtD) * invA;
-                
-                if (t > EPSILON && t < MAX_DIST) {
-                    vec3 p = ro + t * rd;
+                    vec3 color = steamColor * (0.5 + shadow * 0.5);
+                    color += vec3(1.0, 0.95, 0.85) * godRay * 0.5;
                     
-                    // Only upper hemisphere (above ROOM_HEIGHT)
-                    if (p.y > ROOM_HEIGHT) {
-                        // Oculus detection WITHOUT expensive trig:
-                        // The oculus is a circular hole at the dome top.
-                        // If hit point is near the top AND within oculus XZ radius, it's sky.
-                        //
-                        // Method: Check if horizontal distance from axis < oculus radius
-                        // AND hit point is in the "oculus zone" (top portion of dome)
-                        float xzDistSq = p.x * p.x + p.z * p.z;
-                        
-                        // For a point on the dome surface, if xzDistSq < OCULUS_RADIUS_SQ,
-                        // the point is within the oculus cone
-                        // This works because on a sphere, small xz = near the pole
-                        if (xzDistSq < OCULUS_RADIUS_SQ) {
-                            // Sky through oculus
-                            hit.t = t;
-                            hit.normal = vec3(0.0, -1.0, 0.0);
-                            hit.matId = MAT_SKY;
-                        } else {
-                            // Dome surface
-                            hit.t = t;
-                            vec3 toHit = p - DOME_CENTER;
-                            hit.normal = -normalize(toHit);  // Inward facing
-                            hit.matId = MAT_DOME;
-                        }
-                    }
+                    // Warm ambient from below
+                    float warmAmbient = smoothstep(2.0, 0.0, p.y) * uWarmth * 0.3;
+                    color += vec3(1.0, 0.85, 0.7) * warmAmbient;
+                    
+                    float alpha = density * stepSize * 2.5;
+                    accumulated.rgb += color * alpha * (1.0 - accumulated.a);
+                    accumulated.a += alpha * (1.0 - accumulated.a);
                 }
             }
-            return hit;
+            
+            return accumulated;
         }
-
-        // ====================================================================
-        // Intersection: Göbektaşı (raised circular platform)
-        // ====================================================================
-        HitResult intersectGobektasi(vec3 ro, vec3 rd) {
-            HitResult hit;
-            hit.t = MAX_DIST;
-            hit.matId = MAT_NONE;
-            hit.normal = vec3(0.0);
-
-            // Top surface (disk at y = GOBEK_HEIGHT)
-            if (rd.y < -EPSILON) {  // Looking down
-                float tTop = (GOBEK_HEIGHT - ro.y) / rd.y;
-                if (tTop > EPSILON && tTop < MAX_DIST) {
-                    vec3 p = ro + tTop * rd;
-                    float distSq = p.x * p.x + p.z * p.z;
-                    if (distSq < GOBEK_RADIUS * GOBEK_RADIUS) {
-                        hit.t = tTop;
-                        hit.normal = vec3(0.0, 1.0, 0.0);
-                        hit.matId = MAT_GOBEK_TOP;
-                    }
+        
+        // ============================================
+        // CONDENSATION EFFECT
+        // ============================================
+        
+        float condensationDroplets(vec3 p, vec3 n) {
+            // Only on dome ceiling (facing down)
+            if (n.y > -0.3) return 0.0;
+            
+            // Project to 2D for droplet pattern
+            vec2 uv = p.xz * 3.0;
+            
+            // Multi-scale droplets
+            float droplets = 0.0;
+            
+            // Large drops
+            vec2 cell = floor(uv);
+            vec2 f = fract(uv);
+            float d = 1.0;
+            for (int y = -1; y <= 1; y++) {
+                for (int x = -1; x <= 1; x++) {
+                    vec2 neighbor = vec2(float(x), float(y));
+                    vec2 point = hash2(cell + neighbor) * 0.6 + 0.2;
+                    point += sin(uTime * 0.5 + hash2(cell + neighbor) * 6.28) * 0.02;
+                    d = min(d, length(f - neighbor - point));
                 }
             }
-
-            // Side surface (cylinder)
-            float a = rd.x * rd.x + rd.z * rd.z;
-            if (a > EPSILON) {
-                float b = 2.0 * (ro.x * rd.x + ro.z * rd.z);
-                float c = ro.x * ro.x + ro.z * ro.z - GOBEK_RADIUS * GOBEK_RADIUS;
-                float discriminant = b * b - 4.0 * a * c;
-                
-                if (discriminant >= 0.0) {
-                    float sqrtD = sqrt(discriminant);
-                    float invA = 0.5 / a;
-                    float t1 = (-b - sqrtD) * invA;
-                    float t2 = (-b + sqrtD) * invA;
-
-                    // Check near hit first (t1), then far (t2)
-                    for (int i = 0; i < 2; i++) {
-                        float t = (i == 0) ? t1 : t2;
-                        if (t > EPSILON && t < hit.t) {
-                            vec3 p = ro + t * rd;
-                            if (p.y >= 0.0 && p.y <= GOBEK_HEIGHT) {
-                                hit.t = t;
-                                float invR = 1.0 / GOBEK_RADIUS;
-                                hit.normal = vec3(p.x * invR, 0.0, p.z * invR);
-                                hit.matId = MAT_GOBEK_SIDE;
-                            }
-                        }
-                    }
+            droplets += smoothstep(0.15, 0.05, d) * 0.7;
+            
+            // Small drops
+            uv *= 2.0;
+            cell = floor(uv);
+            f = fract(uv);
+            d = 1.0;
+            for (int y = -1; y <= 1; y++) {
+                for (int x = -1; x <= 1; x++) {
+                    vec2 neighbor = vec2(float(x), float(y));
+                    vec2 point = hash2(cell + neighbor + vec2(100.0)) * 0.7 + 0.15;
+                    d = min(d, length(f - neighbor - point));
                 }
             }
-
-            return hit;
+            droplets += smoothstep(0.1, 0.03, d) * 0.4;
+            
+            // Condensation is proportional to steam density (physically realistic)
+            return droplets * uSteamDensity;
         }
-
-        // ====================================================================
-        // Combined Scene Intersection
-        // ====================================================================
-        HitResult intersectScene(vec3 ro, vec3 rd) {
-            HitResult closest;
-            closest.t = MAX_DIST;
-            closest.matId = MAT_NONE;
-            closest.normal = vec3(0.0);
-
-            HitResult h;
+        
+        // ============================================
+        // LIGHTING
+        // ============================================
+        
+        vec3 lighting(vec3 p, vec3 n, vec3 rd, float matID) {
+            vec3 baseColor = marbleColor(p, matID);
             
-            h = intersectFloor(ro, rd);
-            if (h.t < closest.t) closest = h;
+            // Main light from oculi (overhead)
+            vec3 lightDir = normalize(vec3(0.2, 1.0, 0.1));
+            vec3 lightColor = vec3(1.0, 0.95, 0.85) * 1.2;
             
-            h = intersectCylinder(ro, rd);
-            if (h.t < closest.t) closest = h;
+            float diff = max(dot(n, lightDir), 0.0);
             
-            h = intersectDome(ro, rd);
-            if (h.t < closest.t) closest = h;
+            // Ambient light
+            vec3 ambient = vec3(0.25, 0.22, 0.20);
+            ambient = mix(ambient, vec3(0.3, 0.25, 0.2), uWarmth);
             
-            h = intersectGobektasi(ro, rd);
-            if (h.t < closest.t) closest = h;
-
-            return closest;
+            // Specular for wet marble
+            vec3 h = normalize(lightDir - rd);
+            float spec = pow(max(dot(n, h), 0.0), 32.0) * 0.3;
+            
+            // Fresnel for wet surfaces
+            float fresnel = pow(1.0 - max(dot(n, -rd), 0.0), 3.0);
+            
+            // Subsurface scattering approximation for marble
+            float sss = max(0.0, dot(n, -lightDir)) * 0.15;
+            
+            // Condensation adds reflectivity
+            float condensation = condensationDroplets(p, n);
+            spec += condensation * 0.5;
+            fresnel += condensation * 0.3;
+            
+            vec3 color = baseColor * (ambient + lightColor * diff);
+            color += lightColor * spec;
+            color += vec3(0.9, 0.92, 0.95) * fresnel * 0.1;
+            color += baseColor * sss;
+            
+            // Göbektaşı warm glow
+            if (matID > 1.5 && matID < 2.5) {
+                float glowStrength = 0.15 * uWarmth;
+                color += vec3(1.0, 0.8, 0.6) * glowStrength;
+            }
+            
+            return color;
         }
-
-        // ====================================================================
-        // First-Person Camera Matrix
-        // Builds view matrix from yaw and pitch angles
-        // ====================================================================
-        mat3 getCameraMatrix(float yaw, float pitch) {
-            // Precompute sin/cos (done once per pixel is acceptable)
-            float sy = sin(yaw);
-            float cy = cos(yaw);
-            float sp = sin(pitch);
-            float cp = cos(pitch);
-            
-            // Forward direction
-            vec3 forward = vec3(sy * cp, sp, cy * cp);
-            
-            // Right vector (perpendicular to forward in XZ plane)
-            vec3 right = vec3(cy, 0.0, -sy);
-            
-            // Up vector
-            vec3 up = cross(right, forward);
-            
-            return mat3(right, up, forward);
+        
+        // ============================================
+        // CAMERA
+        // ============================================
+        
+        mat3 getCameraMatrix(vec3 ro, vec3 ta) {
+            vec3 w = normalize(ta - ro);
+            vec3 u = normalize(cross(w, vec3(0.0, 1.0, 0.0)));
+            vec3 v = cross(u, w);
+            return mat3(u, v, w);
         }
-
-        // ====================================================================
-        // Material Base Colors
-        // ====================================================================
-        vec3 getMaterialColor(int matId, vec3 p) {
-            if (matId == MAT_FLOOR) {
-                // Warm marble floor with subtle veining
-                float vein = sin(p.x * 3.0 + p.z * 2.0) * 0.03;
-                vein += sin(p.x * 7.0 - p.z * 5.0) * 0.02;
-                return vec3(0.88, 0.84, 0.78) + vein;
-            }
-            else if (matId == MAT_WALL) {
-                // Warm stone walls - gradient from bottom to top
-                float heightFade = p.y / ROOM_HEIGHT;
-                vec3 baseWall = mix(vec3(0.72, 0.65, 0.58), vec3(0.78, 0.72, 0.65), heightFade);
-                // Add subtle horizontal variation
-                float variation = sin(p.x * 2.0) * sin(p.z * 2.0) * 0.02;
-                return baseWall + variation;
-            }
-            else if (matId == MAT_SEAM) {
-                // Darker decorative band at dome junction
-                return vec3(0.45, 0.40, 0.35);
-            }
-            else if (matId == MAT_DOME) {
-                // Light plaster dome - slightly warm
-                vec3 baseDome = vec3(0.92, 0.89, 0.84);
-                // Subtle radial pattern suggestion
-                float distFromCenter = length(p.xz) / DOME_RADIUS;
-                return baseDome - vec3(0.03) * distFromCenter;
-            }
-            else if (matId == MAT_GOBEK_TOP) {
-                // Polished heated marble - warm white
-                float vein = sin(p.x * 5.0 + p.z * 3.0) * 0.015;
-                return vec3(0.95, 0.91, 0.85) + vein;
-            }
-            else if (matId == MAT_GOBEK_SIDE) {
-                // Platform edge - slightly darker
-                return vec3(0.75, 0.70, 0.62);
-            }
-            else if (matId == MAT_SKY) {
-                // Bright sky through oculus
-                return vec3(0.85, 0.92, 1.0);
-            }
-            return vec3(0.0);
-        }
-
-        // ====================================================================
-        // Lighting Calculation
-        // Point light at oculus with diffuse + specular
-        // ====================================================================
-        vec3 calculateLighting(vec3 p, vec3 normal, int matId, vec3 viewDir) {
-            vec3 baseColor = getMaterialColor(matId, p);
-            
-            // Sky is emissive - no shading
-            if (matId == MAT_SKY) {
-                return baseColor * 2.0;
-            }
-            
-            // Vector to light
-            vec3 toLight = LIGHT_POS - p;
-            float lightDistSq = dot(toLight, toLight);
-            float lightDist = sqrt(lightDistSq);
-            vec3 lightDir = toLight / lightDist;
-            
-            // Distance attenuation (gentle falloff for indoor space)
-            float attenuation = 1.0 / (1.0 + 0.02 * lightDistSq);
-            
-            // Diffuse lighting
-            float NdotL = max(dot(normal, lightDir), 0.0);
-            vec3 diffuse = baseColor * NdotL * LIGHT_COLOR * 0.7;
-            
-            // Specular (Blinn-Phong) - marble has subtle sheen
-            vec3 halfVec = normalize(lightDir + viewDir);
-            float NdotH = max(dot(normal, halfVec), 0.0);
-            float specPower = 32.0;
-            float spec = pow(NdotH, specPower);
-            
-            // Specular intensity varies by material
-            float specIntensity = 0.15;
-            if (matId == MAT_GOBEK_TOP) specIntensity = 0.3;  // Polished marble
-            if (matId == MAT_DOME) specIntensity = 0.05;      // Matte plaster
-            if (matId == MAT_SEAM) specIntensity = 0.08;
-            
-            vec3 specular = LIGHT_COLOR * spec * specIntensity;
-            
-            // Ambient (fills shadows, varies by height)
-            float ambientStrength = 0.25;
-            // Brighter ambient near dome (secondary bounce)
-            ambientStrength += 0.1 * (p.y / (ROOM_HEIGHT + DOME_RADIUS));
-            vec3 ambient = baseColor * ambientStrength;
-            
-            // Bright ring highlight around oculus on dome
-            if (matId == MAT_DOME) {
-                float xzDist = length(p.xz);
-                float ringDist = abs(xzDist - OCULUS_RADIUS * 1.5);
-                float ringGlow = exp(-ringDist * 8.0) * 0.15;
-                ambient += LIGHT_COLOR * ringGlow;
-            }
-            
-            // Simple ambient occlusion approximation
-            float ao = 1.0;
-            if (matId == MAT_FLOOR) {
-                // Floor darker near walls
-                float edgeDist = ROOM_RADIUS - length(p.xz);
-                ao = smoothstep(0.0, 1.5, edgeDist);
-                ao = mix(0.6, 1.0, ao);
-            }
-            if (matId == MAT_WALL) {
-                // Walls darker near floor
-                ao = smoothstep(0.0, 0.5, p.y);
-                ao = mix(0.7, 1.0, ao);
-            }
-            
-            return (ambient + (diffuse + specular) * attenuation) * ao;
-        }
-
-        // ====================================================================
-        // Main
-        // ====================================================================
+        
+        // ============================================
+        // MAIN
+        // ============================================
+        
         void main() {
-            // Normalized coordinates with aspect ratio
-            vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution) / u_resolution.y;
-
-            // Camera from uniforms (first-person)
-            vec3 ro = u_cameraPos;
+            vec2 uv = (gl_FragCoord.xy - 0.5 * uResolution) / uResolution.y;
             
-            // Build camera matrix from yaw/pitch
-            mat3 camMat = getCameraMatrix(u_cameraYaw, u_cameraPitch);
+            // Camera setup - use uniforms from JavaScript
+            vec3 ro = uCameraPos;
+            vec3 ta = uCameraTarget;
             
-            // Ray direction with FOV
-            float fov = 1.2;  // ~50 degree half-angle
-            vec3 rd = camMat * normalize(vec3(uv, fov));
-
-            // Trace ray
-            HitResult hit = intersectScene(ro, rd);
+            mat3 cam = getCameraMatrix(ro, ta);
+            vec3 rd = cam * normalize(vec3(uv, 1.0));
             
-            vec3 color;
-            if (hit.matId != MAT_NONE) {
-                vec3 p = ro + hit.t * rd;
-                vec3 viewDir = -rd;
-                color = calculateLighting(p, hit.normal, hit.matId, viewDir);
-            } else {
-                // Background (shouldn't happen if inside room)
-                color = vec3(0.02, 0.02, 0.03);
+            // Raymarch scene
+            vec2 hit = rayMarch(ro, rd);
+            
+            vec3 color = vec3(0.02, 0.015, 0.01); // Dark background
+            
+            if (hit.x < MAX_DIST) {
+                vec3 p = ro + rd * hit.x;
+                vec3 n = getNormal(p);
+                
+                color = lighting(p, n, rd, hit.y);
             }
-
-            // Tone mapping (ACES-ish) and gamma
-            color = color / (color + vec3(0.5)) * 1.2;  // Slight boost
+            
+            // Volumetric steam
+            vec4 steam = raymarchSteam(ro, rd, hit.x);
+            color = mix(color, steam.rgb, steam.a);
+            
+            // Vignette
+            vec2 vigUv = gl_FragCoord.xy / uResolution;
+            float vig = 1.0 - dot(vigUv - 0.5, vigUv - 0.5) * 0.8;
+            color *= vig;
+            
+            // Tone mapping
+            color = color / (color + vec3(1.0));
+            
+            // Gamma correction
             color = pow(color, vec3(1.0 / 2.2));
             
-            // Slight vignette for polish
-            float vignette = 1.0 - 0.15 * dot(uv, uv);
-            color *= vignette;
-
             fragColor = vec4(color, 1.0);
         }
     </script>
 
-    <!-- Main JavaScript -->
-    <script src="main.js"></script>
+    <script>
+        // ============================================
+        // WEBGL2 INITIALIZATION & RENDER LOOP
+        // ============================================
+
+        class HamamRenderer {
+            constructor() {
+                this.canvas = document.getElementById('glCanvas');
+                this.gl = this.canvas.getContext('webgl2', {
+                    antialias: true,
+                    alpha: false,
+                    preserveDrawingBuffer: false
+                });
+
+                if (!this.gl) {
+                    alert('WebGL2 is required for this demo');
+                    return;
+                }
+
+                this.startTime = performance.now();
+                this.frameCount = 0;
+                this.lastFpsUpdate = this.startTime;
+
+                // Uniforms
+                this.uniforms = {
+                    steamDensity: 0.6,
+                    steamQuality: 32,
+                    godRayIntensity: 0.7,
+                    condensation: 0.5,
+                    warmth: 0.65
+                };
+
+                // Camera state - free-roaming first-person camera
+                this.camera = {
+                    x: 0,               // Position X
+                    y: 1.8,             // Position Y (eye height)
+                    z: 3.5,             // Position Z
+                    yaw: Math.PI,       // Horizontal look angle (radians)
+                    pitch: 0.0,         // Vertical look angle (radians)
+                    moveSpeed: 0.08,    // Movement speed
+                    lookSpeed: 0.003    // Mouse sensitivity
+                };
+
+                // Input state
+                this.keys = {};
+                this.mouse = {
+                    isDragging: false,
+                    lastX: 0,
+                    lastY: 0
+                };
+
+                this.init();
+            }
+
+            init() {
+                this.resize();
+                window.addEventListener('resize', () => this.resize());
+
+                this.createShaders();
+                this.createGeometry();
+                this.setupControls();
+                this.setupCameraControls();
+
+                document.getElementById('loading').classList.add('hidden');
+
+                this.render();
+            }
+
+            resize() {
+                // Render at 50% resolution for better performance on complex shaders
+                const scale = 0.5;
+                this.canvas.width = window.innerWidth * scale;
+                this.canvas.height = window.innerHeight * scale;
+                this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
+            }
+
+            compileShader(source, type) {
+                const gl = this.gl;
+                const shader = gl.createShader(type);
+                gl.shaderSource(shader, source);
+                gl.compileShader(shader);
+
+                if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                    console.error('Shader compile error:', gl.getShaderInfoLog(shader));
+                    gl.deleteShader(shader);
+                    return null;
+                }
+
+                return shader;
+            }
+
+            createShaders() {
+                const gl = this.gl;
+
+                const vsSource = document.getElementById('vs-quad').textContent;
+                const fsSource = document.getElementById('fs-hamam').textContent;
+
+                const vs = this.compileShader(vsSource, gl.VERTEX_SHADER);
+                const fs = this.compileShader(fsSource, gl.FRAGMENT_SHADER);
+
+                this.program = gl.createProgram();
+                gl.attachShader(this.program, vs);
+                gl.attachShader(this.program, fs);
+                gl.linkProgram(this.program);
+
+                if (!gl.getProgramParameter(this.program, gl.LINK_STATUS)) {
+                    console.error('Program link error:', gl.getProgramInfoLog(this.program));
+                    return;
+                }
+
+                gl.useProgram(this.program);
+
+                // Get uniform locations
+                this.uTime = gl.getUniformLocation(this.program, 'uTime');
+                this.uResolution = gl.getUniformLocation(this.program, 'uResolution');
+                this.uCameraPos = gl.getUniformLocation(this.program, 'uCameraPos');
+                this.uCameraTarget = gl.getUniformLocation(this.program, 'uCameraTarget');
+                this.uSteamDensity = gl.getUniformLocation(this.program, 'uSteamDensity');
+                this.uSteamQuality = gl.getUniformLocation(this.program, 'uSteamQuality');
+                this.uGodRayIntensity = gl.getUniformLocation(this.program, 'uGodRayIntensity');
+                this.uCondensation = gl.getUniformLocation(this.program, 'uCondensation');
+                this.uWarmth = gl.getUniformLocation(this.program, 'uWarmth');
+            }
+
+            createGeometry() {
+                const gl = this.gl;
+
+                // Full-screen quad
+                const positions = new Float32Array([
+                    -1, -1,
+                    1, -1,
+                    -1, 1,
+                    1, 1
+                ]);
+
+                const vao = gl.createVertexArray();
+                gl.bindVertexArray(vao);
+
+                const buffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+                gl.bufferData(gl.ARRAY_BUFFER, positions, gl.STATIC_DRAW);
+
+                const aPosition = gl.getAttribLocation(this.program, 'aPosition');
+                gl.enableVertexAttribArray(aPosition);
+                gl.vertexAttribPointer(aPosition, 2, gl.FLOAT, false, 0, 0);
+
+                this.vao = vao;
+            }
+
+            setupControls() {
+                const setupSlider = (id, uniform, multiplier = 0.01, suffix = '%') => {
+                    const slider = document.getElementById(id);
+                    const display = document.getElementById(id + 'Val');
+
+                    slider.addEventListener('input', () => {
+                        const value = parseFloat(slider.value);
+                        this.uniforms[uniform] = value * multiplier;
+                        display.textContent = suffix === 'steps' ?
+                            value + ' steps' :
+                            Math.round(value) + suffix;
+                    });
+                };
+
+                setupSlider('steamDensity', 'steamDensity');
+                setupSlider('steamQuality', 'steamQuality', 1, 'steps');
+                setupSlider('godRayIntensity', 'godRayIntensity');
+                setupSlider('warmth', 'warmth');
+            }
+
+            setupCameraControls() {
+                // Mouse drag for looking around
+                this.canvas.addEventListener('mousedown', (e) => {
+                    this.mouse.isDragging = true;
+                    this.mouse.lastX = e.clientX;
+                    this.mouse.lastY = e.clientY;
+                    this.canvas.style.cursor = 'crosshair';
+                });
+
+                window.addEventListener('mouseup', () => {
+                    this.mouse.isDragging = false;
+                    this.canvas.style.cursor = 'grab';
+                });
+
+                window.addEventListener('mousemove', (e) => {
+                    if (!this.mouse.isDragging) return;
+
+                    const deltaX = e.clientX - this.mouse.lastX;
+                    const deltaY = e.clientY - this.mouse.lastY;
+
+                    // Rotate view
+                    this.camera.yaw -= deltaX * this.camera.lookSpeed;
+                    this.camera.pitch -= deltaY * this.camera.lookSpeed;
+
+                    // Clamp pitch to avoid flipping
+                    this.camera.pitch = Math.max(-1.4, Math.min(1.4, this.camera.pitch));
+
+                    this.mouse.lastX = e.clientX;
+                    this.mouse.lastY = e.clientY;
+                });
+
+                // Keyboard for movement
+                window.addEventListener('keydown', (e) => {
+                    this.keys[e.code] = true;
+                    // Prevent page scrolling on arrow keys
+                    if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].includes(e.code)) {
+                        e.preventDefault();
+                    }
+                });
+
+                window.addEventListener('keyup', (e) => {
+                    this.keys[e.code] = false;
+                });
+
+                // Set initial cursor
+                this.canvas.style.cursor = 'grab';
+            }
+
+            updateCamera() {
+                const cam = this.camera;
+                const speed = cam.moveSpeed;
+
+                // Calculate forward and right vectors based on yaw
+                const forwardX = Math.sin(cam.yaw);
+                const forwardZ = Math.cos(cam.yaw);
+                const rightX = Math.sin(cam.yaw + Math.PI / 2);
+                const rightZ = Math.cos(cam.yaw + Math.PI / 2);
+
+                // WASD / Arrow key movement
+                if (this.keys['KeyW'] || this.keys['ArrowUp']) {
+                    cam.x += forwardX * speed;
+                    cam.z += forwardZ * speed;
+                }
+                if (this.keys['KeyS'] || this.keys['ArrowDown']) {
+                    cam.x -= forwardX * speed;
+                    cam.z -= forwardZ * speed;
+                }
+                if (this.keys['KeyA'] || this.keys['ArrowLeft']) {
+                    cam.x -= rightX * speed;
+                    cam.z -= rightZ * speed;
+                }
+                if (this.keys['KeyD'] || this.keys['ArrowRight']) {
+                    cam.x += rightX * speed;
+                    cam.z += rightZ * speed;
+                }
+
+                // Up/Down movement (Q/E or Space/Shift)
+                if (this.keys['KeyE'] || this.keys['Space']) {
+                    cam.y += speed;
+                }
+                if (this.keys['KeyQ'] || this.keys['ShiftLeft'] || this.keys['ShiftRight']) {
+                    cam.y -= speed;
+                }
+
+                // Clamp height to reasonable bounds
+                cam.y = Math.max(0.3, Math.min(8.0, cam.y));
+            }
+
+            getCameraPosition() {
+                return [this.camera.x, this.camera.y, this.camera.z];
+            }
+
+            getCameraTarget() {
+                const cam = this.camera;
+                // Calculate look-at point based on yaw and pitch
+                const lookX = cam.x + Math.sin(cam.yaw) * Math.cos(cam.pitch);
+                const lookY = cam.y + Math.sin(cam.pitch);
+                const lookZ = cam.z + Math.cos(cam.yaw) * Math.cos(cam.pitch);
+                return [lookX, lookY, lookZ];
+            }
+
+            render() {
+                const gl = this.gl;
+                const now = performance.now();
+                const time = (now - this.startTime) * 0.001;
+
+                // Update camera position based on keyboard input
+                this.updateCamera();
+
+                // FPS calculation
+                this.frameCount++;
+                if (now - this.lastFpsUpdate >= 1000) {
+                    document.getElementById('fps').textContent =
+                        'FPS: ' + this.frameCount;
+                    this.frameCount = 0;
+                    this.lastFpsUpdate = now;
+                }
+
+                // Set uniforms
+                gl.uniform1f(this.uTime, time);
+                gl.uniform2f(this.uResolution, this.canvas.width, this.canvas.height);
+
+                // Camera uniforms
+                const camPos = this.getCameraPosition();
+                const camTarget = this.getCameraTarget();
+                gl.uniform3f(this.uCameraPos, camPos[0], camPos[1], camPos[2]);
+                gl.uniform3f(this.uCameraTarget, camTarget[0], camTarget[1], camTarget[2]);
+
+                gl.uniform1f(this.uSteamDensity, this.uniforms.steamDensity);
+                gl.uniform1f(this.uSteamQuality, this.uniforms.steamQuality);
+                gl.uniform1f(this.uGodRayIntensity, this.uniforms.godRayIntensity);
+                gl.uniform1f(this.uCondensation, this.uniforms.condensation);
+                gl.uniform1f(this.uWarmth, this.uniforms.warmth);
+
+                // Draw
+                gl.bindVertexArray(this.vao);
+                gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+                requestAnimationFrame(() => this.render());
+            }
+        }
+
+        // Start the application
+        window.addEventListener('DOMContentLoaded', () => {
+            new HamamRenderer();
+        });
+    </script>
 </body>
 
 </html>
